@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RevenueGuard - AI Revenue Recovery Agent</title>
+    <meta name="description" content="RevenueGuard AI-powered revenue recovery dashboard - detect, diagnose, and recover failed payments">
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-brand">
+                <div class="logo">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                        <rect width="32" height="32" rx="8" fill="url(#grad1)"/>
+                        <path d="M10 16L14 20L22 12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs>
+                            <linearGradient id="grad1" x1="0" y1="0" x2="32" y2="32">
+                                <stop stop-color="#6366f1"/>
+                                <stop offset="1" stop-color="#8b5cf6"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <h1>RevenueGuard</h1>
+                <span class="badge">AI Agent</span>
+            </div>
+            <div class="header-actions">
+                <button id="btn-run" class="btn btn-primary" onclick="runPipeline()">
+                    <span class="btn-icon">&#9654;</span> Run Pipeline
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main" id="main-content">
+            {% if metrics %}
+            <!-- Headline Metrics -->
+            <section class="metrics-grid" id="metrics-section">
+                <div class="metric-card accent-blue">
+                    <div class="metric-label">Total At Risk</div>
+                    <div class="metric-value">Rs.{{ "{:,.0f}".format(metrics.combined_amount_at_risk) }}</div>
+                    <div class="metric-sub">{{ metrics.total_events_detected }} events detected</div>
+                </div>
+                <div class="metric-card accent-red">
+                    <div class="metric-label">Baseline Recovery</div>
+                    <div class="metric-value">{{ metrics.baseline.recovery_rate }}%</div>
+                    <div class="metric-sub">Rs.{{ "{:,.0f}".format(metrics.baseline.amount_recovered) }} (no intervention)</div>
+                </div>
+                <div class="metric-card accent-green">
+                    <div class="metric-label">Agent Recovery</div>
+                    <div class="metric-value">{{ metrics.agent_assisted.recovery_rate }}%</div>
+                    <div class="metric-sub">Rs.{{ "{:,.0f}".format(metrics.agent_assisted.amount_recovered) }} recovered</div>
+                </div>
+                <div class="metric-card accent-purple">
+                    <div class="metric-label">Net Lift</div>
+                    <div class="metric-value">+{{ metrics.net_lift.percentage_points }}pp</div>
+                    <div class="metric-sub">Rs.{{ "{:,.0f}".format(metrics.net_lift.incremental_amount) }} incremental</div>
+                </div>
+            </section>
+
+            <!-- Breakdown Section -->
+            <section class="grid-2col">
+                <!-- By Event Type -->
+                <div class="card">
+                    <h2 class="card-title">Recovery by Event Type</h2>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Recovered</th>
+                                <th>Rate</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for etype, data in metrics.type_breakdown.items() %}
+                            <tr>
+                                <td><span class="tag tag-{{ etype.split('_')[0]|lower }}">{{ etype.replace('_', ' ').title() }}</span></td>
+                                <td>{{ data.recovered }}/{{ data.total }}</td>
+                                <td>{{ (data.recovered / data.total * 100)|round(0)|int if data.total > 0 else 0 }}%</td>
+                                <td>Rs.{{ "{:,.0f}".format(data.amount_recovered) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- By Action -->
+                <div class="card">
+                    <h2 class="card-title">Recovery by Action</h2>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Action</th>
+                                <th>Taken</th>
+                                <th>Recovered</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for action, data in metrics.action_breakdown.items() %}
+                            <tr>
+                                <td><span class="tag tag-action">{{ action.replace('_', ' ').title() }}</span></td>
+                                <td>{{ data.total }}</td>
+                                <td>{{ data.recovered }}</td>
+                                <td>Rs.{{ "{:,.0f}".format(data.amount_recovered) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Gate Stats -->
+            <section class="card">
+                <h2 class="card-title">Safety Gate Triggers</h2>
+                <p class="card-subtitle">How many times each safety gate blocked an automated action</p>
+                <div class="gate-stats">
+                    {% for gate, count in metrics.gate_trigger_stats.items() %}
+                    <div class="gate-stat">
+                        <div class="gate-name">{{ gate.replace('_', ' ').title() }}</div>
+                        <div class="gate-count">{{ count }}</div>
+                        <div class="gate-bar" style="width: {{ (count / (metrics.treatment_count or 1)) * 100 }}%"></div>
+                    </div>
+                    {% endfor %}
+                    {% if not metrics.gate_trigger_stats %}
+                    <p class="text-muted">No gates were triggered in this run.</p>
+                    {% endif %}
+                </div>
+            </section>
+
+            <!-- Showcase Failure Case -->
+            {% if metrics.showcase_failure_cases %}
+            <section class="card card-showcase">
+                <div class="showcase-badge">Showcase: Graceful Degradation</div>
+                <h2 class="card-title">Handled Failure Case</h2>
+                <p class="card-subtitle">
+                    This case demonstrates the agent's bounded execution: when recovery actions fail,
+                    the system correctly stops retrying and escalates to a human agent.
+                </p>
+                {% for case_id in metrics.showcase_failure_cases %}
+                <div class="showcase-case" data-case-id="{{ case_id }}">
+                    <div class="showcase-id">{{ case_id }}</div>
+                    <button class="btn btn-sm" onclick="loadCase('{{ case_id }}')">View Full Timeline</button>
+                </div>
+                {% endfor %}
+            </section>
+            {% endif %}
+
+            <!-- Honesty Note -->
+            <section class="card card-honesty">
+                <h2 class="card-title">Honesty Note</h2>
+                <p>{{ metrics.honesty_note }}</p>
+            </section>
+
+            {% else %}
+            <!-- No data state -->
+            <section class="empty-state">
+                <div class="empty-icon">
+                    <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+                        <circle cx="32" cy="32" r="30" stroke="#6366f1" stroke-width="2" stroke-dasharray="4 4"/>
+                        <path d="M24 32L30 38L40 26" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <h2>No pipeline data yet</h2>
+                <p>Click "Run Pipeline" to execute the full RevenueGuard detection and recovery pipeline.</p>
+                <button class="btn btn-primary btn-lg" onclick="runPipeline()">Run Pipeline</button>
+            </section>
+            {% endif %}
+
+            <!-- Case Detail Modal -->
+            <div id="case-modal" class="modal" style="display:none;">
+                <div class="modal-overlay" onclick="closeModal()"></div>
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 id="modal-title">Case Timeline</h2>
+                        <button class="btn-close" onclick="closeModal()">&times;</button>
+                    </div>
+                    <div id="modal-body" class="modal-body">
+                        <!-- Timeline rendered here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cases Table -->
+            {% if metrics %}
+            <section class="card" id="cases-section">
+                <h2 class="card-title">All Cases</h2>
+                <p class="card-subtitle">Click any case to view its full audit timeline</p>
+                <div class="table-wrapper">
+                    <table class="data-table sortable" id="cases-table">
+                        <thead>
+                            <tr>
+                                <th onclick="sortTable(0)">Case ID</th>
+                                <th onclick="sortTable(1)">Type</th>
+                                <th onclick="sortTable(2)">Amount</th>
+                                <th onclick="sortTable(3)">Outcome</th>
+                                <th onclick="sortTable(4)">Recovered</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cases-tbody">
+                            <tr><td colspan="6" class="text-muted">Loading cases...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            {% endif %}
+        </main>
+
+        <footer class="footer">
+            <p>RevenueGuard &mdash; Razorpay Buildathon 2026 &mdash; Built with FastAPI + Claude</p>
+        </footer>
+    </div>
+
+    <script>
+        // Load cases on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadCases();
+        });
+
+        async function loadCases() {
+            try {
+                const res = await fetch('/cases');
+                const cases = await res.json();
+                const tbody = document.getElementById('cases-tbody');
+                if (!tbody) return;
+
+                tbody.innerHTML = '';
+                cases.forEach(c => {
+                    const timeline = c.timeline || [];
+                    const detectStage = timeline.find(s => s.stage === 'detect') || {};
+                    const execStage = timeline.find(s => s.stage === 'execute') || {};
+                    const controlStage = timeline.find(s => s.stage === 'control_baseline');
+
+                    const eventType = detectStage.event_type || controlStage ? 'CONTROL' : 'UNKNOWN';
+                    const amount = detectStage.amount_at_risk || 0;
+                    const outcome = execStage.outcome || (controlStage ? (controlStage.recovered ? 'natural_recovery' : 'no_intervention') : '-');
+                    const recovered = execStage.amount_recovered || (controlStage ? controlStage.amount_recovered : 0);
+                    const isShowcase = execStage.is_showcase_failure_case || false;
+
+                    const row = document.createElement('tr');
+                    if (isShowcase) row.classList.add('showcase-row');
+
+                    row.innerHTML = `
+                        <td class="case-id">${c.case_id}${isShowcase ? ' <span class="badge badge-sm">SHOWCASE</span>' : ''}</td>
+                        <td><span class="tag tag-${eventType.split('_')[0].toLowerCase()}">${eventType.replace(/_/g, ' ')}</span></td>
+                        <td>Rs.${Number(amount).toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
+                        <td><span class="outcome-${outcome.includes('recover') ? 'success' : outcome.includes('escalat') ? 'warn' : 'neutral'}">${outcome.replace(/_/g, ' ')}</span></td>
+                        <td>Rs.${Number(recovered).toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
+                        <td><button class="btn btn-sm" onclick="loadCase('${c.case_id}')">Timeline</button></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (e) {
+                console.error('Failed to load cases:', e);
+            }
+        }
+
+        async function loadCase(caseId) {
+            try {
+                const res = await fetch(`/cases/${caseId}`);
+                const data = await res.json();
+
+                document.getElementById('modal-title').textContent = `Case: ${caseId}`;
+                const body = document.getElementById('modal-body');
+
+                let html = '<div class="timeline">';
+                (data.timeline || []).forEach((stage, i) => {
+                    const stageIcons = {
+                        'detect': '&#128269;',
+                        'diagnose': '&#129658;',
+                        'decide': '&#9878;',
+                        'gate_check': '&#128274;',
+                        'execute': '&#9889;',
+                        'control_baseline': '&#128202;'
+                    };
+                    const icon = stageIcons[stage.stage] || '&#9679;';
+
+                    html += `<div class="timeline-item">
+                        <div class="timeline-dot">${icon}</div>
+                        <div class="timeline-content">
+                            <div class="timeline-stage">${stage.stage.replace(/_/g, ' ').toUpperCase()}</div>
+                            <div class="timeline-time">${stage.ts || ''}</div>
+                            <div class="timeline-details">`;
+
+                    // Render stage-specific details
+                    if (stage.stage === 'detect') {
+                        html += `<div class="detail-row"><span>Type:</span> ${stage.event_type || ''}</div>`;
+                        html += `<div class="detail-row"><span>Amount:</span> Rs.${Number(stage.amount_at_risk || 0).toLocaleString()}</div>`;
+                        html += `<div class="detail-row"><span>Risk Score:</span> ${stage.risk_score || 0}</div>`;
+                        html += `<div class="detail-row"><span>Rules:</span> ${(stage.triggered_rules || []).join(', ')}</div>`;
+                    } else if (stage.stage === 'diagnose') {
+                        html += `<div class="detail-row"><span>Tier:</span> ${stage.tier || ''}</div>`;
+                        html += `<div class="detail-row"><span>Root Cause:</span> ${stage.root_cause || ''}</div>`;
+                        html += `<div class="detail-row"><span>Confidence:</span> ${stage.confidence || 0}</div>`;
+                        html += `<div class="detail-row"><span>Reasoning:</span> <em>${stage.reasoning || ''}</em></div>`;
+                    } else if (stage.stage === 'decide') {
+                        html += `<div class="detail-row"><span>Chosen:</span> <strong>${stage.chosen_action || ''}</strong> (EV: Rs.${Number(stage.chosen_ev || 0).toLocaleString()})</div>`;
+                        if (stage.candidates) {
+                            html += '<div class="candidates-list">';
+                            stage.candidates.forEach(c => {
+                                const isChosen = c.action === stage.chosen_action;
+                                html += `<div class="candidate ${isChosen ? 'chosen' : ''}">
+                                    ${c.action}: EV=Rs.${Number(c.ev).toLocaleString()} (P=${c.p_success}, cost=${c.cost})
+                                </div>`;
+                            });
+                            html += '</div>';
+                        }
+                    } else if (stage.stage === 'gate_check') {
+                        const passedClass = stage.passed ? 'gate-passed' : 'gate-blocked';
+                        html += `<div class="detail-row ${passedClass}"><span>Result:</span> ${stage.passed ? 'PASSED' : 'BLOCKED by ' + (stage.blocked_by || 'unknown')}</div>`;
+                        if (stage.gates_applied) {
+                            stage.gates_applied.forEach(g => {
+                                html += `<div class="detail-row gate-detail"><span>${g.gate}:</span> ${JSON.stringify(g)}</div>`;
+                            });
+                        }
+                    } else if (stage.stage === 'execute') {
+                        html += `<div class="detail-row"><span>Action:</span> ${stage.action || ''}</div>`;
+                        html += `<div class="detail-row"><span>Outcome:</span> <strong>${stage.outcome || ''}</strong></div>`;
+                        html += `<div class="detail-row"><span>Recovered:</span> Rs.${Number(stage.amount_recovered || 0).toLocaleString()}</div>`;
+                        html += `<div class="detail-row"><span>Details:</span> ${stage.details || ''}</div>`;
+                        if (stage.is_showcase_failure_case) {
+                            html += '<div class="showcase-banner">SHOWCASE FAILURE CASE - Demonstrates graceful degradation</div>';
+                        }
+                    } else if (stage.stage === 'control_baseline') {
+                        html += `<div class="detail-row"><span>Group:</span> Control (no intervention)</div>`;
+                        html += `<div class="detail-row"><span>Natural Recovery:</span> ${stage.recovered ? 'Yes' : 'No'}</div>`;
+                        html += `<div class="detail-row"><span>Amount:</span> Rs.${Number(stage.amount_recovered || 0).toLocaleString()}</div>`;
+                    } else {
+                        // Generic render
+                        Object.entries(stage).forEach(([k, v]) => {
+                            if (k !== 'stage' && k !== 'ts') {
+                                html += `<div class="detail-row"><span>${k}:</span> ${typeof v === 'object' ? JSON.stringify(v) : v}</div>`;
+                            }
+                        });
+                    }
+
+                    html += `</div></div></div>`;
+                });
+                html += '</div>';
+
+                body.innerHTML = html;
+                document.getElementById('case-modal').style.display = 'flex';
+            } catch (e) {
+                console.error('Failed to load case:', e);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('case-modal').style.display = 'none';
+        }
+
+        async function runPipeline() {
+            const btn = document.getElementById('btn-run');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="btn-icon spin">&#8635;</span> Running...';
+
+            try {
+                const res = await fetch('/run', { method: 'POST' });
+                const data = await res.json();
+                window.location.reload();
+            } catch (e) {
+                alert('Pipeline failed: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="btn-icon">&#9654;</span> Run Pipeline';
+            }
+        }
+
+        // Table sorting
+        let sortDir = {};
+        function sortTable(colIdx) {
+            const table = document.getElementById('cases-table');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            sortDir[colIdx] = !sortDir[colIdx];
+            const dir = sortDir[colIdx] ? 1 : -1;
+
+            rows.sort((a, b) => {
+                const aVal = a.cells[colIdx]?.textContent || '';
+                const bVal = b.cells[colIdx]?.textContent || '';
+                const aNum = parseFloat(aVal.replace(/[^0-9.-]/g, ''));
+                const bNum = parseFloat(bVal.replace(/[^0-9.-]/g, ''));
+
+                if (!isNaN(aNum) && !isNaN(bNum)) return (aNum - bNum) * dir;
+                return aVal.localeCompare(bVal) * dir;
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        // Keyboard shortcut for modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+    </script>
+</body>
+</html>

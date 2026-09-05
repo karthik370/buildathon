@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RevenueGuard — Human Approval Queue</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0f1117;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+
+        /* ── Nav ── */
+        nav {
+            background: #1a1d2e;
+            border-bottom: 1px solid #2d3152;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            height: 56px;
+        }
+        nav .logo { color: #818cf8; font-weight: 700; font-size: 1.1rem; text-decoration: none; }
+        nav a { color: #94a3b8; text-decoration: none; font-size: 0.875rem; }
+        nav a:hover { color: #e2e8f0; }
+        nav a.active { color: #818cf8; }
+
+        /* ── Page header ── */
+        .page-header {
+            background: linear-gradient(135deg, #1a1d2e 0%, #141624 100%);
+            padding: 2rem;
+            border-bottom: 1px solid #2d3152;
+        }
+        .page-header h1 { font-size: 1.5rem; color: #e2e8f0; margin-bottom: 0.25rem; }
+        .page-header p { color: #64748b; font-size: 0.875rem; }
+
+        /* ── Stats bar ── */
+        .stats-bar {
+            display: flex;
+            gap: 1.5rem;
+            padding: 1rem 2rem;
+            background: #1a1d2e;
+            border-bottom: 1px solid #2d3152;
+        }
+        .stat { text-align: center; }
+        .stat .num { font-size: 1.5rem; font-weight: 700; color: #818cf8; }
+        .stat .label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        /* ── Queue table ── */
+        .queue-container { padding: 2rem; }
+        .queue-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            margin-bottom: 1rem;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        thead th {
+            background: #1a1d2e;
+            color: #64748b;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #2d3152;
+        }
+        tbody tr {
+            border-bottom: 1px solid #1e2235;
+            transition: background 0.15s;
+        }
+        tbody tr:hover { background: #1a1d2e; }
+        tbody td { padding: 0.875rem 1rem; font-size: 0.875rem; vertical-align: top; }
+
+        .case-id { font-family: monospace; font-size: 0.8rem; color: #818cf8; }
+        .event-type-badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .badge-payment { background: #1e3a5f; color: #60a5fa; }
+        .badge-checkout { background: #1a2e3b; color: #34d399; }
+        .badge-invoice { background: #2d1b4e; color: #a78bfa; }
+        .badge-subscription { background: #1f2d1b; color: #4ade80; }
+        .badge-promise { background: #2d1b1b; color: #f87171; }
+
+        .amount { font-weight: 600; color: #fbbf24; }
+        .root-cause { color: #94a3b8; font-size: 0.8rem; }
+        .blocked-by {
+            display: inline-block;
+            padding: 0.15rem 0.4rem;
+            background: #2d1b1b;
+            color: #f87171;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-family: monospace;
+        }
+        .reasoning {
+            color: #64748b;
+            font-size: 0.8rem;
+            max-width: 280px;
+            line-height: 1.4;
+        }
+
+        /* ── Action buttons ── */
+        .action-buttons { display: flex; gap: 0.5rem; }
+        .btn {
+            padding: 0.4rem 0.9rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-approve { background: #14532d; color: #4ade80; border: 1px solid #166534; }
+        .btn-approve:hover { background: #166534; }
+        .btn-reject  { background: #450a0a; color: #f87171; border: 1px solid #7f1d1d; }
+        .btn-reject:hover  { background: #7f1d1d; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* ── Status overlay on a row ── */
+        .row-approved { background: #052e16 !important; }
+        .row-rejected  { background: #1c0606 !important; }
+        .status-tag {
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+        .status-approved { background: #14532d; color: #4ade80; }
+        .status-rejected  { background: #450a0a; color: #f87171; }
+
+        /* ── Empty state ── */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #475569;
+        }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; }
+        .empty-state p { font-size: 0.875rem; }
+
+        /* ── Toast ── */
+        #toast {
+            position: fixed; bottom: 1.5rem; right: 1.5rem;
+            background: #1e293b; border: 1px solid #334155;
+            padding: 0.75rem 1.25rem; border-radius: 8px;
+            font-size: 0.875rem; display: none; z-index: 100;
+            transition: opacity 0.2s;
+        }
+        #toast.success { border-color: #166534; color: #4ade80; }
+        #toast.error   { border-color: #7f1d1d; color: #f87171; }
+
+        /* ── Responsive ── */
+        @media (max-width: 900px) { .reasoning { max-width: 180px; } }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="/" class="logo">⚡ RevenueGuard</a>
+    <a href="/">Dashboard</a>
+    <a href="/approvals" class="active">Approvals Queue</a>
+    <a href="/cases">Cases</a>
+</nav>
+
+<div class="page-header">
+    <h1>🧑‍⚖️ Human Approval Queue</h1>
+    <p>Cases escalated for human review — gate-blocked auto-actions and failed recovery attempts. Single-operator queue (no authentication for demo).</p>
+</div>
+
+<div class="stats-bar" id="stats-bar">
+    <div class="stat">
+        <div class="num" id="stat-total">—</div>
+        <div class="label">Pending</div>
+    </div>
+    <div class="stat">
+        <div class="num" id="stat-amount">—</div>
+        <div class="label">Total at risk</div>
+    </div>
+    <div class="stat">
+        <div class="num" id="stat-gate">—</div>
+        <div class="label">Gate-blocked</div>
+    </div>
+    <div class="stat">
+        <div class="num" id="stat-failed">—</div>
+        <div class="label">Retry-failed</div>
+    </div>
+</div>
+
+<div class="queue-container">
+    <div class="queue-title">Pending cases — sorted by amount at risk (largest first)</div>
+    <div id="queue-body">
+        <div class="empty-state"><div class="icon">⏳</div><p>Loading cases…</p></div>
+    </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const BADGE_CLASS = {
+    HARD_PAYMENT_FAILURE:  'badge-payment',
+    CHECKOUT_ABANDONMENT:  'badge-checkout',
+    OVERDUE_RECEIVABLE:    'badge-invoice',
+    SILENT_RENEWAL_FAILURE:'badge-subscription',
+    PROMISE_BROKEN:        'badge-promise',
+    PROMISE_DUE_SOON:      'badge-promise',
+};
+
+function fmtAmount(n) {
+    return 'Rs.' + Number(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function showToast(msg, type='success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = type;
+    t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, 3500);
+}
+
+async function loadCases() {
+    const res = await fetch('/approvals/list');
+    const data = await res.json();
+    renderCases(data.cases || []);
+    renderStats(data.cases || []);
+}
+
+function renderStats(cases) {
+    const pending = cases.filter(c => !c._reviewed).length;
+    const totalAmount = cases.reduce((s, c) => s + c.amount_at_risk, 0);
+    const gateBlocked = cases.filter(c => c.blocked_by).length;
+    const failed = cases.filter(c => c.outcome === 'escalated_after_failures').length;
+    document.getElementById('stat-total').textContent = pending;
+    document.getElementById('stat-amount').textContent = fmtAmount(totalAmount);
+    document.getElementById('stat-gate').textContent = gateBlocked;
+    document.getElementById('stat-failed').textContent = failed;
+}
+
+function renderCases(cases) {
+    const container = document.getElementById('queue-body');
+    if (!cases.length) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">✅</div><p>No pending cases. Run the pipeline first: <code>POST /run</code></p></div>`;
+        return;
+    }
+    const html = `
+    <table>
+        <thead>
+            <tr>
+                <th>Case ID</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Root cause</th>
+                <th>Blocked by</th>
+                <th>Reasoning</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="case-rows">
+        ${cases.map(c => `
+        <tr id="row-${c.case_id}">
+            <td><span class="case-id">${c.case_id}</span></td>
+            <td>
+                <span class="event-type-badge ${BADGE_CLASS[c.event_type] || ''}">
+                    ${c.event_type.replace(/_/g,' ')}
+                </span>
+            </td>
+            <td class="amount">${fmtAmount(c.amount_at_risk)}</td>
+            <td class="root-cause">${c.root_cause || '—'}</td>
+            <td>${c.blocked_by ? `<span class="blocked-by">${c.blocked_by}</span>` : `<span style="color:#475569">retry failures</span>`}</td>
+            <td><div class="reasoning">${(c.reasoning || '').slice(0, 160)}${c.reasoning && c.reasoning.length > 160 ? '…' : ''}</div></td>
+            <td>
+                <div class="action-buttons" id="btns-${c.case_id}">
+                    <button class="btn btn-approve" id="approve-${c.case_id}"
+                        onclick="handleDecision('${c.case_id}', 'approve')">✓ Approve</button>
+                    <button class="btn btn-reject" id="reject-${c.case_id}"
+                        onclick="handleDecision('${c.case_id}', 'reject')">✕ Reject</button>
+                </div>
+            </td>
+        </tr>
+        `).join('')}
+        </tbody>
+    </table>`;
+    container.innerHTML = html;
+}
+
+async function handleDecision(caseId, decision) {
+    const approveBtn = document.getElementById(`approve-${caseId}`);
+    const rejectBtn  = document.getElementById(`reject-${caseId}`);
+    approveBtn.disabled = true;
+    rejectBtn.disabled  = true;
+
+    try {
+        const res = await fetch(`/approvals/${caseId}/${decision}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({reviewer: 'demo_user'}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Request failed');
+
+        const row = document.getElementById(`row-${caseId}`);
+        const btns = document.getElementById(`btns-${caseId}`);
+
+        if (decision === 'approve') {
+            row.classList.add('row-approved');
+            const outcome = data.re_execution_outcome || 'approved';
+            btns.innerHTML = `<span class="status-tag status-approved">✓ APPROVED — ${outcome}</span>`;
+            showToast(`${caseId}: approved. Outcome: ${outcome}`, 'success');
+        } else {
+            row.classList.add('row-rejected');
+            btns.innerHTML = `<span class="status-tag status-rejected">✕ REJECTED</span>`;
+            showToast(`${caseId}: rejected and closed.`, 'error');
+        }
+    } catch (err) {
+        approveBtn.disabled = false;
+        rejectBtn.disabled  = false;
+        showToast(`Error: ${err.message}`, 'error');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadCases);
+</script>
+
+</body>
+</html>
